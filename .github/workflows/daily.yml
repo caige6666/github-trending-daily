@@ -1,0 +1,53 @@
+name: Daily Trending Report
+
+on:
+  schedule:
+    # UTC 00:12 = 北京时间 08:12
+    - cron: '12 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # 允许把日报归档 commit 回仓库，保持仓库活跃，避免 schedule 被 GitHub 因 60 天无活动自动禁用
+  issues: write     # 允许每天开 issue
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch trending and render markdown
+        run: python fetch_trending.py > report.md
+
+      - name: Archive report into daily/ folder
+        run: |
+          mkdir -p daily
+          DATE=$(date -u '+%Y-%m-%d')
+          cp report.md "daily/${DATE}.md"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "daily/${DATE}.md"
+          # 当天已经提交过就不重复 commit
+          git diff --cached --quiet || git commit -m "archive: trending ${DATE} [skip ci]"
+          git push
+
+      - name: Create daily issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITLE="Trending $(date -u '+%Y-%m-%d')"
+          if gh issue list --state open --search "$TITLE in:title" --json number -q 'length' | grep -qv '^0$'; then
+            echo "Issue already exists, skip."
+          else
+            gh issue create --title "$TITLE" --body-file report.md
+          fi
+
+      - name: Push to WeCom group bot
+        if: ${{ secrets.WECOM_BOT_WEBHOOK != '' }}
+        env:
+          WEBHOOK: ${{ secrets.WECOM_BOT_WEBHOOK }}
+        run: python push_wecom.py report.md
