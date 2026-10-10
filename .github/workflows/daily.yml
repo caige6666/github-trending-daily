@@ -47,7 +47,6 @@ jobs:
           fi
 
       - name: Push to WeCom group bot
-        if: ${{ secrets.WECOM_BOT_WEBHOOK != '' }}
         env:
           WEBHOOK: ${{ secrets.WECOM_BOT_WEBHOOK }}
         run: python push_wecom.py report.md
